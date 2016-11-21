@@ -24,5 +24,6 @@
     <ClInclude Include="$(MSBuildThisFileDirectory)MiqsAudio.Base.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)MiqsAudio.Devices.h" />
     <ClInclude Include="$(MSBuildThisFileDirectory)MiqsAudio.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)MiqsAudio.Handlers.h" />
   </ItemGroup>
 </Project>

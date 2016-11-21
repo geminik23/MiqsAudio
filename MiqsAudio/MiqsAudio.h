@@ -6,3 +6,4 @@
 #include "MiqsAudio.Base.h"
 #include "MiqsAudio.Devices.h"
 #include "MiqsAudio.Audio.h"
+#include "MiqsAudio.Handlers.h"

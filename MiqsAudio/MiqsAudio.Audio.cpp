@@ -13,128 +13,25 @@ using namespace Microsoft::WRL;
 
 namespace MiqsAudio
 {
-	struct AudioHandle: AudioHandleinterface
+struct AudioHandle: AudioHandleinterface
+{
+	AudioHandle() { format[0] = nullptr; format[1] = nullptr; }
+	~AudioHandle() { freeFormat(); }
+	Microsoft::WRL::ComPtr<IAudioCaptureClient> captureAudioClient;
+	Microsoft::WRL::ComPtr<IAudioRenderClient> renderAudioClient;
+	Microsoft::WRL::ComPtr<IAudioClient3> audioClient[2];
+	WAVEFORMATEX* format[2];
+private:
+	void freeFormat()
 	{
-		AudioHandle() { format[0] = nullptr; format[1] = nullptr; }
-		~AudioHandle() { freeFormat(); }
-		Microsoft::WRL::ComPtr<IAudioCaptureClient> captureAudioClient;
-		Microsoft::WRL::ComPtr<IAudioRenderClient> renderAudioClient;
-		Microsoft::WRL::ComPtr<IAudioClient3> audioClient[2];
-		WAVEFORMATEX* format[2];
-	private:
-		void freeFormat()
-		{
-			if (format[0])CoTaskMemFree(format[0]); 
-			if (format[1])CoTaskMemFree(format[1]);
-			format[0] = nullptr;
-			format[1] = nullptr;
-		}
-	};
+		if (format[0])CoTaskMemFree(format[0]);
+		if (format[1])CoTaskMemFree(format[1]);
+		format[0] = nullptr;
+		format[1] = nullptr;
+	}
+};
 
 
-	// this buffer size must be (require length + 1)
-	struct PushSampleBuffer: private miqs::circular_data<unsigned char>
-	{
-		typedef unsigned char byte_t;
-		PushSampleBuffer()
-		{}
-
-		void Resize(size_t _size)
-		{
-			this->buffer.reset(_size);
-			this->ptr = buffer.data();
-			this->size = _size;
-			this->head = 0;
-			this->tail = 0;
-			miqs::ptr_fill_zero(ptr, ptr + _size);
-		}
-
-		bool PushAvailable(size_t count)
-		{
-			if (count == 0) return true;
-			unsigned int relOutIndex = head;
-			unsigned int inIndexEnd = tail + count;
-			int diff = (int)tail - (int)head;
-			if (relOutIndex >= inIndexEnd || ((diff) < 0 && (diff) >= -(int)count))
-			{
-				inIndexEnd += size;
-			}
-			if (inIndexEnd - relOutIndex >= this->size) return false;
-			return true;
-		}
-
-		bool Push(byte_t* data, size_t count)
-		{
-			if (!data || count == 0 || count > this->size) return false;
-
-			/////
-			if (!PushAvailable(count)) return false;
-
-
-			auto middle = data + (((this->size - tail) < count) ? (this->size - tail) : count);
-			//miqs::ptr_copy(data, middle, at_tail());
-			memcpy((void*)at_tail(), data, (((this->size - tail) < count) ? (this->size - tail) : count));
-
-			if (this->size - tail < count)
-				//miqs::ptr_copy(middle, data + count, ptr);
-				memcpy((void*)ptr, (void*)middle, (count - (this->size - tail)));
-
-			this->tail += count;
-			if (this->tail >= size) this->tail -= size;
-
-
-			////TODO
-			//std::wostringstream wo;
-			//wo << L"Pushed " << count << "\n";
-			//OutputDebugString(wo.str().c_str());
-			return true;
-		}
-
-		bool PullAvailable(size_t count)
-		{
-			if (count == 0) return true;
-			unsigned int relOutIndex = head + count;
-			unsigned int inIndexEnd = tail;
-			if (head >= tail)
-			{
-				inIndexEnd += size;
-			}
-
-			if ((head - tail) <= count && (head - tail) >= 0) return false;
-			if (inIndexEnd <= relOutIndex) return false;
-			return true;
-		}
-
-		bool Pull(byte_t* data, size_t count)
-		{
-			if (!data || count == 0 || count > this->size) return false;
-
-			if (!PullAvailable(count)) return false;
-
-			size_t head_to_end = this->size - head;
-			//auto end_ptr = at_head() + (((head_to_end) < count) ? (head_to_end) : count);
-			//miqs::ptr_copy(at_head(), end_ptr, data);
-			memcpy((void*)data, (void*)at_head(), (((head_to_end) < count) ? (head_to_end) : count));
-
-
-			if (head_to_end < count)
-				//miqs::ptr_copy(ptr, ptr + (count - head_to_end), data + head_to_end);
-				memcpy((void*)(data + head_to_end), (void*)ptr, (count - head_to_end));
-
-			this->head += count;
-			if (this->head >= size) this->head -= size;
-			//this->head %= this->size;
-
-			////TODO
-			//std::wostringstream wo;
-			//wo << L"Pulled " << count << "\n";
-			//OutputDebugString(wo.str().c_str());
-			return true;
-		}
-
-	protected:
-		miqs::array<value_type> buffer;
-	};
 
 }
 
@@ -320,7 +217,7 @@ void MiqsAudio::AudioInterface::Stop(bool fireEvent)
 
 	m_streaminfo.audioState = AudioState::Stopping;
 	// audio state event
-	if(fireEvent)this->_EmitCurrentAudioStateEvent();
+	if (fireEvent)this->_EmitCurrentAudioStateEvent();
 
 	using namespace std::chrono_literals;
 	while (m_streaminfo.audioState != AudioState::Stopping)
@@ -437,8 +334,7 @@ void MiqsAudio::AudioInterface::_UpdateConvertInfo(DeviceMode type)
 		m_streaminfo.convertInfo[type].dstSampleStep = m_streaminfo.audioInfo.nChannels[type];
 		m_streaminfo.convertInfo[type].srcSampleStep = m_streaminfo.audioInfo.nChannels[type];
 
-	}
-	else
+	} else
 	{
 		m_streaminfo.convertInfo[type].dstFormat = m_streaminfo.deviceFormat[type];
 		m_streaminfo.convertInfo[type].srcFormat = m_streaminfo.audioInfo.format;
@@ -527,21 +423,18 @@ bool AudioInterface::_InitializeDevice(DeviceMode type, uint32_t deviceId, uint3
 		if (mixFormat->wBitsPerSample == 32)
 		{
 			streaminfo.deviceFormat[cur_mode] = AudioFormat::Float32;
-		}
-		else if (mixFormat->wBitsPerSample == 64)
+		} else if (mixFormat->wBitsPerSample == 64)
 		{
 			streaminfo.deviceFormat[cur_mode] = AudioFormat::Float64;
 		}
-	}
-	else if (mixFormat->wFormatTag == WAVE_FORMAT_PCM ||
+	} else if (mixFormat->wFormatTag == WAVE_FORMAT_PCM ||
 		(mixFormat->wFormatTag == WAVE_FORMAT_EXTENSIBLE &&
-			 ((WAVEFORMATEXTENSIBLE*)mixFormat)->SubFormat == KSDATAFORMAT_SUBTYPE_PCM))
+			   ((WAVEFORMATEXTENSIBLE*)mixFormat)->SubFormat == KSDATAFORMAT_SUBTYPE_PCM))
 	{
 		if (mixFormat->wBitsPerSample == 8)
 		{
 			streaminfo.deviceFormat[cur_mode] = AudioFormat::Int8;
-		}
-		else if (mixFormat->wBitsPerSample == 16)
+		} else if (mixFormat->wBitsPerSample == 16)
 		{
 			streaminfo.deviceFormat[cur_mode] = AudioFormat::Int16;
 		}
@@ -588,8 +481,7 @@ bool AudioInterface::_InitializeDevice(DeviceMode type, uint32_t deviceId, uint3
 			throw ErrorException(L"AudioInterface::InitializeDevice() - Failed to retrieve the capture client", AudioInterfaceError::DeviceError);
 		}
 
-	}
-	else
+	} else
 	{
 		hr = client->GetService(__uuidof(IAudioRenderClient),
 			(void**)&(audiohandle->renderAudioClient));
@@ -736,8 +628,8 @@ void MiqsAudio::AudioInterface::_Threading()
 
 	DWORD captureFlag;
 
-	PushSampleBuffer renderBuffer;
-	PushSampleBuffer captureBuffer;
+	miqs::sample_queue<byte_t> renderBuffer;
+	miqs::sample_queue<byte_t> captureBuffer;
 
 
 
@@ -762,7 +654,7 @@ void MiqsAudio::AudioInterface::_Threading()
 		//:::::::::::::::::::::::::::::::::::::::
 		unsigned int outBufferSize = (unsigned int)(streaminfo.audioInfo.bufferSize * ratioOfCaptureSR);
 
-		captureBuffer.Resize((miqs::max_value((size_t)(inBufferSize*1.5), inBufferSize + outBufferSize))*handle->format[CAPTURE]->nBlockAlign);
+		captureBuffer.resize((miqs::max_value((size_t)(inBufferSize*1.5), inBufferSize + outBufferSize))*handle->format[CAPTURE]->nBlockAlign);
 
 
 		// reset the capture stream
@@ -802,7 +694,7 @@ void MiqsAudio::AudioInterface::_Threading()
 		// set Buffer size
 
 		unsigned int inBufferSize = (unsigned int)(streaminfo.audioInfo.bufferSize * ratioOfRenderSR);
-		renderBuffer.Resize(miqs::max_value((size_t)(outBufferSize *1.5), outBufferSize + inBufferSize)*handle->format[RENDER]->nBlockAlign);
+		renderBuffer.resize(miqs::max_value((size_t)(outBufferSize *1.5), outBufferSize + inBufferSize)*handle->format[RENDER]->nBlockAlign);
 
 		// reset the render stream
 		hr = client->Reset();
@@ -847,7 +739,7 @@ void MiqsAudio::AudioInterface::_Threading()
 	size_t rdevice_size = (size_t)(streaminfo.audioInfo.bufferSize * ratioOfRenderSR);
 
 
-	bool deviceInitialized[2] = { handle->audioClient[CAPTURE] , handle->audioClient[RENDER]};
+	bool deviceInitialized[2] = { handle->audioClient[CAPTURE] , handle->audioClient[RENDER] };
 
 	//---------------------------------------------LOOPING
 	while (m_streaminfo.audioState != AudioState::Stopping)
@@ -864,8 +756,8 @@ void MiqsAudio::AudioInterface::_Threading()
 		*/
 
 		if (!u_cbEmitted && m_streaminfo.audioState == AudioState::Running
-			&& renderBuffer.PushAvailable(rdevice_size*(handle->format[RENDER] ? handle->format[RENDER]->nBlockAlign : 0))
-			&& captureBuffer.PullAvailable(cdevice_size*(handle->format[CAPTURE] ? handle->format[CAPTURE]->nBlockAlign : 0)))
+			&& renderBuffer.push_available(rdevice_size*(handle->format[RENDER] ? handle->format[RENDER]->nBlockAlign : 0))
+			&& captureBuffer.pull_available(cdevice_size*(handle->format[CAPTURE] ? handle->format[CAPTURE]->nBlockAlign : 0)))
 		{
 
 
@@ -873,7 +765,7 @@ void MiqsAudio::AudioInterface::_Threading()
 			{
 				// pull from capture buffer. //check size
 				// device pull from buffer
-				captureBuffer.Pull(device_buffer, cdevice_size*handle->format[CAPTURE]->nBlockAlign);
+				captureBuffer.pull(miqs::ptr_begin(device_buffer), miqs::ptr_at(device_buffer, cdevice_size*handle->format[CAPTURE]->nBlockAlign));
 				// samplerate - convert<-device
 				ConvertDifferentSamplerate(convert_buffer, device_buffer,
 										   streaminfo.audioInfo.nChannels[CAPTURE],
@@ -913,14 +805,14 @@ void MiqsAudio::AudioInterface::_Threading()
 										   streaminfo.deviceFormat[RENDER]);
 
 				// push to render buffer
-				renderBuffer.Push(device_buffer, rdevice_size*handle->format[RENDER]->nBlockAlign);
+				renderBuffer.push(miqs::ptr_begin(device_buffer), miqs::ptr_at(device_buffer, rdevice_size*handle->format[RENDER]->nBlockAlign));
 			}
 
 			u_cbEmitted = true;
 		}
 
 
-		if (deviceInitialized[CAPTURE] &&handle->audioClient[CAPTURE] && m_streaminfo.audioState == AudioState::Running)
+		if (deviceInitialized[CAPTURE] && handle->audioClient[CAPTURE] && m_streaminfo.audioState == AudioState::Running)
 		{
 			hr = handle->captureAudioClient->GetNextPacketSize(&uFrameBuffSize);
 			if (FAILED(hr))
@@ -929,7 +821,7 @@ void MiqsAudio::AudioInterface::_Threading()
 				goto tExit;
 			}
 
-			if (uFrameBuffSize > 0/*cdevice_size*/ && captureBuffer.PushAvailable(uFrameBuffSize*handle->format[CAPTURE]->nBlockAlign))
+			if (uFrameBuffSize > 0/*cdevice_size*/ && captureBuffer.push_available(uFrameBuffSize*handle->format[CAPTURE]->nBlockAlign))
 			{
 				hr = handle->captureAudioClient->GetBuffer(&uBuffer, &uFrameBuffSize, &captureFlag, nullptr, nullptr);
 				if (FAILED(hr))
@@ -939,7 +831,7 @@ void MiqsAudio::AudioInterface::_Threading()
 				}
 
 				//Push
-				captureBuffer.Push(uBuffer, uFrameBuffSize*handle->format[CAPTURE]->nBlockAlign);
+				captureBuffer.push(uBuffer, uBuffer + (uFrameBuffSize*handle->format[CAPTURE]->nBlockAlign));
 
 
 				hr = handle->captureAudioClient->ReleaseBuffer(uFrameBuffSize);
@@ -950,8 +842,7 @@ void MiqsAudio::AudioInterface::_Threading()
 				}
 
 
-			}
-			else
+			} else
 			{
 				hr = handle->captureAudioClient->ReleaseBuffer(0);
 				if (FAILED(hr))
@@ -980,15 +871,14 @@ void MiqsAudio::AudioInterface::_Threading()
 			}
 
 			uFrameBuffSize -= uNumPadding;
-			if (uFrameBuffSize >= rdevice_size && renderBuffer.PullAvailable(rdevice_size*handle->format[RENDER]->nBlockAlign))
+			if (uFrameBuffSize >= rdevice_size && renderBuffer.pull_available(rdevice_size*handle->format[RENDER]->nBlockAlign))
 			{
 				hr = handle->renderAudioClient->GetBuffer(rdevice_size, &uBuffer);
 
-				if ((SUCCEEDED(hr)) && renderBuffer.Pull(uBuffer, rdevice_size*handle->format[RENDER]->nBlockAlign))
+				if ((SUCCEEDED(hr)) && renderBuffer.pull(uBuffer, uBuffer + (rdevice_size*handle->format[RENDER]->nBlockAlign)))
 				{
 					hr = handle->renderAudioClient->ReleaseBuffer(rdevice_size, 0);
-				}
-				else
+				} else
 				{
 					hr = handle->renderAudioClient->ReleaseBuffer(0, 0);
 				}
@@ -996,7 +886,6 @@ void MiqsAudio::AudioInterface::_Threading()
 
 			}
 		}
-
 		if (u_cbEmitted)
 		{
 			u_cbEmitted = false;
