@@ -4,7 +4,6 @@
 using namespace MiqsAudio;
 
 
-using namespace winrt;
 using namespace winrt::Windows::Foundation;
 using namespace winrt::Windows::Devices::Enumeration;
 using namespace winrt::Windows::Media::Devices;

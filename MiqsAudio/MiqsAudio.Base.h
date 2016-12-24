@@ -1,12 +1,14 @@
 #pragma once
 
 
-
-#pragma comment(lib, "runtimeobject.lib")
+#pragma comment(lib,"windowsapp")
+#pragma comment(lib, "runtimeobject")
 #include <winrt/ppl.h>
 #include <winrt/Windows.Devices.Enumeration.h>
 #include <winrt/Windows.Media.Devices.h>
 #include <winrt/Windows.Media.Audio.h>
+#include <concrt.h>
+
 
 #include <wrl.h>
 #include <mfapi.h>
@@ -16,7 +18,6 @@
 #include <miqs>
 #include <vector>
 #include <string>
-#include <wrl.h>
 
 
 

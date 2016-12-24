@@ -48,8 +48,8 @@ protected:
 inline void MiqsAudioHandler::operator()(MiqsAudio::byte_t * inputBuffer,
 										 MiqsAudio::byte_t * outputBuffer,
 										 MiqsAudio::AudioInfo audioInfo,
-										 MiqsAudio::AudioState audioState,
-										 uint64_t time, void * data)
+										 MiqsAudio::AudioState /*audioState*/,
+										 uint64_t /*time*/, void * /*data*/)
 {
 	if (!this->m_sampleHandler)return;
 
